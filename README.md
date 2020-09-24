@@ -6,6 +6,6 @@
  
 #### Just typing this command to upload files: python3 download.py -id xxxxxxxxx -f xxxx
 
-- id : id of file or folder, go to Google drive, and go to folder that your want to download, folder id is on address bar, ex: https://drive.google.com/drive/u/0/folders/1sWlBT47oLWR6TOhj5KHHQVb_wrybpDxL , then id is: 1sWlBT47oLWR6TOhj5KHHQVb_wrybpDxL
+- id : id of file or folder, go to Google drive, and go to folder that your want to download, folder id is on address bar, ex: https://drive.google.com/drive/u/0/folders/1sWlBT47osdfsdfKsdfsdfsdfybpDxL , then id is: 1sWlBT47osdfsdfKsdfsdfsdfybpDxL
 
 - f: this is subfolder you want to download all file into (instead download files / folder on the same folder as script, i decided to create subfolder to store it. I can make it download to custom location - maybe someday, lazy af ^^)
