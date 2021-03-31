@@ -15,7 +15,7 @@ import operator
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-list_char = ['?','"']
+list_char = ['\\', '//', '|', '*', '?', '<', '>']
 
 
 def parse_args():
@@ -94,7 +94,31 @@ def convert_string(str):
     for char in str:
         if char in list_char:
             str = str.replace(char,"_")
+        if char == "'":
+            str = str.replace(char,";")
+        if char == '"':
+            str = str.replace(char,"'")
     return str
+    
+    
+def humanbytes(B):
+   'Return the given bytes as a human friendly KB, MB, GB, or TB string'
+   B = float(B)
+   KB = float(1024)
+   MB = float(KB ** 2) # 1,048,576
+   GB = float(KB ** 3) # 1,073,741,824
+   TB = float(KB ** 4) # 1,099,511,627,776
+
+   if B < KB:
+      return '{0} {1}'.format(B,'Bytes' if 0 == B > 1 else 'Byte')
+   elif KB <= B < MB:
+      return '{0:.2f} KB'.format(B/KB)
+   elif MB <= B < GB:
+      return '{0:.2f} MB'.format(B/MB)
+   elif GB <= B < TB:
+      return '{0:.2f} GB'.format(B/GB)
+   elif TB <= B:
+      return '{0:.2f} TB'.format(B/TB)
 
 
 def get_id_in_folder(service, folder_id):
@@ -116,7 +140,8 @@ def get_id_in_folder(service, folder_id):
                 folder.append([item['id'], item['name']])
                 # print('Folder: ' + item['size'])
             else:
-                file.append([item['id'], item['name'], item['size']])
+                size = humanbytes(item['size'])
+                file.append([item['id'], item['name'], size])
                 # print('File: ' + item['size'])
 
         folder = sort_f(folder, 1)
@@ -137,7 +162,6 @@ def download_file(service, file_id, name_org, size, path):
     name = convert_string(name_org)
     print("Download: " + "['" + file_id + "'" + ", '" + name + "']")
     dir = os.path.join(path, name)
-    print(dir)
     # filesize =
     # print(str(filesize) + '....' + size)
     if os.path.exists(dir) == True and str(os.path.getsize(dir)) == size:
