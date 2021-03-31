@@ -2,6 +2,7 @@ from __future__ import print_function
 import pickle
 import os.path
 import os
+import string
 # import io
 from argparse import ArgumentParser
 from googleapiclient.discovery import build
@@ -13,6 +14,8 @@ from apiclient import errors
 import operator
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
+
+list_char = ['?','"']
 
 
 def parse_args():
@@ -74,6 +77,7 @@ def sort_f(f, number):
         print("Cannot sort files/folders: ")
         print(err)
 
+
 def isFolder(service, f_id):
     results = service.files().get(fileId=f_id,
                                   fields="id, name, size, mimeType").execute()
@@ -82,7 +86,15 @@ def isFolder(service, f_id):
         return True
     else:
         return results['name'], results['size']
-
+        
+        
+def convert_string(str):
+#    for char in string.punctuation:
+#        str = str.replace(char, '_')
+    for char in str:
+        if char in list_char:
+            str = str.replace(char,"_")
+    return str
 
 
 def get_id_in_folder(service, folder_id):
@@ -121,9 +133,11 @@ def get_id_in_folder(service, folder_id):
     return file, folder
 
 
-def download_file(service, file_id, name, size, path):
+def download_file(service, file_id, name_org, size, path):
+    name = convert_string(name_org)
     print("Download: " + "['" + file_id + "'" + ", '" + name + "']")
     dir = os.path.join(path, name)
+    print(dir)
     # filesize =
     # print(str(filesize) + '....' + size)
     if os.path.exists(dir) == True and str(os.path.getsize(dir)) == size:
@@ -182,8 +196,6 @@ def main():
     else:
         name, size = isFolder(service, id)
         download_file(service, id, name, size, path1)
-
-
 
 
 if __name__ == '__main__':
