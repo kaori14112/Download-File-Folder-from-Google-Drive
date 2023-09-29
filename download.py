@@ -3,6 +3,9 @@ import pickle
 import os.path
 import os
 import string
+import hashlib
+from datetime import datetime
+
 # import io
 from argparse import ArgumentParser
 from googleapiclient.discovery import build
@@ -33,6 +36,15 @@ def parse_args():
     return parser.parse_args()
 
 
+def logging(log, level=0):
+    curr_time = datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ")
+    if level == 0:
+        print(curr_time + "[INFO] " + log)
+    elif level == 1:
+        print(curr_time + "[WARN] " + log)
+    elif level == 2:
+        print(curr_time + "[CRIT] " + log)
+
 def authentication():
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
@@ -59,13 +71,17 @@ def authentication():
 def create_folder(name, path):
     try:
         n_path = os.path.join(path, name)
-        print("Folder will be create: " + n_path)
-        os.mkdir(n_path)
-
+        #print("Folder will be create: " + n_path)
+        logging("Folder will be create: %s" % n_path)
+        if os.path.exists(n_path):
+            logging("Directory already exist")
+            return n_path
+        else:
+            os.mkdir(n_path)
     except OSError:
-        print("Creation of the directory %s failed" % n_path)
+        logging("Directory %s failed to create... Maybe it already exist" % n_path, 1)
     else:
-        print("Success")
+        logging("Directory created.")
     return n_path
 
 
@@ -74,18 +90,32 @@ def sort_f(f, number):
         result = sorted(f, key=operator.itemgetter(number))
         return result
     except IndexError as err:
-        print("Cannot sort files/folders: ")
-        print(err)
+        logging("Cannot sort files/folders: ", 2)
+        logging(str(err), 2)
+
+
+def checkmd5(file_path):
+    # Calculate the MD5 checksum of the file
+    md5_hash = hashlib.md5()
+    if (os.path.isfile(file_path)):
+        with open(file_path, "rb") as file:
+            # Read the file in small chunks to save memory
+            for chunk in iter(lambda: file.read(4096), b""):
+                md5_hash.update(chunk)
+            
+        return md5_hash.hexdigest()
+    else:
+        return "hash_not_found"
 
 
 def isFolder(service, f_id):
     results = service.files().get(fileId=f_id,
-                                  fields="id, name, size, mimeType").execute()
+                                  fields="id, name, md5Checksum, mimeType").execute()
 
     if results['mimeType'] == "application/vnd.google-apps.folder":
         return True
     else:
-        return results['name'], results['size']
+        return results['name'], results['md5Checksum']
         
         
 def convert_string(str):
@@ -119,19 +149,51 @@ def humanbytes(B):
       return '{0:.2f} GB'.format(B/GB)
    elif TB <= B:
       return '{0:.2f} TB'.format(B/TB)
+      
+def convert_size_to_bytes(size_str):
+    # Split the string into parts (e.g., "0.0" and "Byte")
+    parts = size_str.split()
+    
+    # Check if the parts contain a valid number and unit
+    if len(parts) != 2 or not parts[0].replace('.', '', 1).isdigit():
+        raise ValueError("Invalid file size format")
+    
+    # Extract the numerical part and convert it to a float
+    size_num = float(parts[0])
+    
+    # Define a dictionary to map units to bytes
+    size_units = {
+        "Byte": 1,
+        "KB": 1024,
+        "MB": 1024**2,
+        "GB": 1024**3,
+        "TB": 1024**4,
+        "PB": 1024**5,
+        "EB": 1024**6,
+        "ZB": 1024**7,
+        "YB": 1024**8
+    }
+    
+    # Get the unit and convert the size to bytes
+    size_unit = parts[1]
+    if size_unit in size_units:
+        size_in_bytes = int(size_num * size_units[size_unit])
+        return size_in_bytes
+    else:
+        raise ValueError("Invalid file size unit")
 
 
 def get_id_in_folder(service, folder_id):
     results = service.files().list(q="'" + folder_id + "'" + " in parents",
                                    spaces='drive',
                                    pageSize=1000,
-                                   fields="nextPageToken, files(id, name, mimeType, size)").execute()
+                                   fields="nextPageToken, files(id, name, mimeType, md5Checksum)").execute()
     items = results.get('files', [])
     fld = 'folder'
     file = []
     folder = []
     if not items:
-        print('No files found.')
+        logging('Folder is empty, no files found. Skipping...')
     else:
         # print('Files:')
         for item in items:
@@ -140,34 +202,47 @@ def get_id_in_folder(service, folder_id):
                 folder.append([item['id'], item['name']])
                 # print('Folder: ' + item['size'])
             else:
-                size = humanbytes(item['size'])
-                file.append([item['id'], item['name'], size])
+                #size = humanbytes(item['size'])
+                #file.append([item['id'], item['name'], size])
+                md5_checksum = item.get('md5Checksum', 'md5 of %s is not available from API' % {item['name']})
+                file.append([item['id'], item['name'], md5_checksum])
                 # print('File: ' + item['size'])
 
         folder = sort_f(folder, 1)
         file = sort_f(file, 1)
 
-        print("Folders: ")
-        for x in folder:
-            print(x)
-
-        print('Files: ')
-        for y in (file):
-            print(y)
-
+        if len(folder) != 0:
+            logging("List folders: ")
+            for x in folder:
+                print(x[1])
+        if len(file) != 0:
+            index1 = 1
+            logging('List files in parent folder: [%s]' % folder_id)
+            for y in (file):
+                print("%s: %s" % (str(index1), y[1]))
+                index1+=1
+        else:
+            logging('List file empty')
     return file, folder
 
 
-def download_file(service, file_id, name_org, size, path):
+def download_file(service, file_id, name_org, md5Checksum, path):
+    #original_directory = os.getcwd()
     name = convert_string(name_org)
-    print("Download: " + "['" + file_id + "'" + ", '" + name + "']")
+    logging("File name: ['" + name + "'] - ID: ['" + file_id + "']")
     dir = os.path.join(path, name)
     # filesize =
     # print(str(filesize) + '....' + size)
-    if os.path.exists(dir) == True and str(os.path.getsize(dir)) == size:
-        print('File alreay exist, skipping...')
+    #print(dir)
+    #print(os.path.exists(path))
+    #print(os.path.isfile(dir))
+    #print(str(checkmd5(dir)) + " - " + str(md5Checksum))
+    if os.path.exists(dir) == True and str(checkmd5(dir)) == str(md5Checksum):
+        logging('File alreay exist, skipping... \n')
         return 0
 
+    #print("Path Length:", len(dir))
+    #os.chdir(path)
     file_io_base = open(dir, 'wb')
 
     request = service.files().get_media(fileId=file_id)
@@ -176,14 +251,20 @@ def download_file(service, file_id, name_org, size, path):
         try:
             status, done = media_request.next_chunk()
         except errors.HttpError as error:
-            print('An error occurred: %s' % error)
+            logging('An error occurred: %s \n' % error, 2)
             return
         if status:
-            print("... %d%%." % int(status.progress() * 100))
+            previous_progress_message = "Current: %s / Total: %s - %.2f%%" % (humanbytes(status.resumable_progress), humanbytes(status.total_size), status.progress() * 100)
+            padding = ' ' * (len(previous_progress_message) + 2)  # Add 2 for the carriage return and space
+
+            print(padding, end="\r")  # Clear the line
+            print("Current: %s / Total: %s - %.2f%%" % (humanbytes(status.resumable_progress), humanbytes(status.total_size), status.progress() * 100), end="\r", flush=True)
         if done:
-            print('Download Complete')
+            logging('Download Complete! \n')
             file_io_base.close()
-            return 0
+            break
+  #  os.chdir(original_directory)        
+    return 0
 
 
 def download_folder(service, folder_id, path):
@@ -218,8 +299,8 @@ def main():
     if isFolder(service,id) == True:
         download_folder(service, id, path1)
     else:
-        name, size = isFolder(service, id)
-        download_file(service, id, name, size, path1)
+        name, md5Checksum = isFolder(service, id)
+        download_file(service, id, name, md5Checksum, path1)
 
 
 if __name__ == '__main__':
