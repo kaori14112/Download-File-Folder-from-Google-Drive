@@ -5,6 +5,7 @@ import os
 import string
 import hashlib
 from datetime import datetime
+import time
 
 import asyncio
 import aiohttp
@@ -251,6 +252,10 @@ async def download_file(service, file_id, name_org, md5Checksum, path):
 
     request = service.files().get_media(fileId=file_id)
     media_request = http.MediaIoBaseDownload(file_io_base, request)
+
+    prev_progress = 0.0
+    prev_time = time.time()
+
     while True:
         try:
             status, done = media_request.next_chunk()
@@ -258,11 +263,24 @@ async def download_file(service, file_id, name_org, md5Checksum, path):
             logging('An error occurred: %s \n' % error, 2)
             return
         if status:
-            previous_progress_message = "Current: %s / Total: %s - %.2f%%" % (humanbytes(status.resumable_progress), humanbytes(status.total_size), status.progress() * 100)
-            padding = ' ' * (len(previous_progress_message) + 2)  # Add 2 for the carriage return and space
+            current_time = time.time()
+            elapsed_time = current_time - prev_time
 
-            print(padding, end="\r")  # Clear the line
-            print("Current: %s / Total: %s - %.2f%%" % (humanbytes(status.resumable_progress), humanbytes(status.total_size), status.progress() * 100), end="\r", flush=True)
+            downloaded_bytes = status.resumable_progress
+            total_bytes = status.total_size
+
+            download_speed = (downloaded_bytes - prev_progress) / elapsed_time
+
+            progress_message = "Current: %s / Total: %s - %.2f%% - Speed: %s/s" % (
+                humanbytes(downloaded_bytes), humanbytes(total_bytes), status.progress() * 100, humanbytes(download_speed))
+
+            padding = ' ' * (len(progress_message) + 2)
+
+            print(padding, end="\r")
+            print(progress_message, end="\r", flush=True)
+
+            prev_progress = downloaded_bytes
+            prev_time = current_time
         if done:
             logging('Download Complete! \n')
             file_io_base.close()
