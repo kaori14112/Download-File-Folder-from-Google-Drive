@@ -6,6 +6,9 @@ import string
 import hashlib
 from datetime import datetime
 
+import asyncio
+import aiohttp
+
 # import io
 from argparse import ArgumentParser
 from googleapiclient.discovery import build
@@ -20,6 +23,7 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 
 list_char = ['\\', '//', '|', '*', '?', '<', '>']
 
+list_download_file = []
 
 def parse_args():
     """
@@ -226,7 +230,7 @@ def get_id_in_folder(service, folder_id):
     return file, folder
 
 
-def download_file(service, file_id, name_org, md5Checksum, path):
+async def download_file(service, file_id, name_org, md5Checksum, path):
     #original_directory = os.getcwd()
     name = convert_string(name_org)
     logging("File name: ['" + name + "'] - ID: ['" + file_id + "']")
@@ -264,7 +268,7 @@ def download_file(service, file_id, name_org, md5Checksum, path):
             file_io_base.close()
             break
   #  os.chdir(original_directory)        
-    return 0
+    #return 0
 
 
 def download_folder(service, folder_id, path):
@@ -276,7 +280,9 @@ def download_folder(service, folder_id, path):
         for file in files:
             # print(file)
             # download_file(service, file[0], file[1])
-            download_file(service, file[0], file[1], file[2], path)
+            #download_file(service, file[0], file[1], file[2], path)
+            temp_list = [file[0], file[1], file[2], path]
+            list_download_file.append(temp_list)
     if len(folders) != 0:
         for folder in folders:
             # print(folder)
@@ -285,7 +291,30 @@ def download_folder(service, folder_id, path):
             download_folder(service, folder[0], n_path)
 
 
-def main():
+# def handle_multi_download(service, list_download_file):
+#     if len(list_download_file) == 0:
+#         logging("Download list is empty!", 2)
+#         exit(1)
+    
+async def download_files_concurrently(service, list_download_file):
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for item in list_download_file:
+            file_id, name, md5Checksum, path = item
+            name = convert_string(name)
+            dir = os.path.join(path, name)
+            
+            if os.path.exists(dir) and str(checkmd5(dir)) == str(md5Checksum):
+                logging(f'File {name} already exists, skipping...')
+            else:
+                tasks.append(download_file(service, file_id, name, md5Checksum, path))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+
+
+async def main():
     args = parse_args()
     id = args.ID
     folder = args.localfolder
@@ -301,7 +330,12 @@ def main():
     else:
         name, md5Checksum = isFolder(service, id)
         download_file(service, id, name, md5Checksum, path1)
+    
+
+    print(list_download_file)
+    await download_files_concurrently(service, list_download_file)
 
 
 if __name__ == '__main__':
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
